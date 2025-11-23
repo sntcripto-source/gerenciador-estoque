@@ -648,53 +648,80 @@ function setupFinancials() {
     form.addEventListener('submit', (e) => {
         e.preventDefault();
 
-        const type = document.querySelector('input[name="type"]:checked').value;
-        const description = document.getElementById('finDescription').value;
-        const amount = parseFloat(document.getElementById('finAmount').value);
-        const dueDate = document.getElementById('finDueDate').value;
-        const category = document.getElementById('finCategory').value;
-        const isInstallment = installmentCheck.checked;
-        const installments = isInstallment ? parseInt(document.getElementById('finInstallments').value) : 1;
+        try {
+            // Validate state
+            if (!Array.isArray(state.financials)) {
+                console.warn('State financials corrupted, resetting');
+                state.financials = [];
+            }
 
-        if (isInstallment && installments > 1) {
-            const installmentValue = amount / installments;
-            let currentDate = new Date(dueDate);
-            // Adjust for timezone offset to ensure date correctness
-            currentDate.setMinutes(currentDate.getMinutes() + currentDate.getTimezoneOffset());
+            const typeInput = document.querySelector('input[name="type"]:checked');
+            if (!typeInput) {
+                throw new Error('Selecione o tipo de transação');
+            }
 
-            for (let i = 1; i <= installments; i++) {
+            const type = typeInput.value;
+            const description = document.getElementById('finDescription').value;
+            const amount = parseFloat(document.getElementById('finAmount').value);
+            const dueDate = document.getElementById('finDueDate').value;
+            const category = document.getElementById('finCategory').value;
+            const isInstallment = installmentCheck.checked;
+            const installments = isInstallment ? parseInt(document.getElementById('finInstallments').value) : 1;
+
+            if (!description) {
+                throw new Error('Descrição é obrigatória');
+            }
+            if (isNaN(amount) || amount <= 0) {
+                throw new Error('Valor deve ser maior que zero');
+            }
+            if (!dueDate) {
+                throw new Error('Data de vencimento é obrigatória');
+            }
+
+            if (isInstallment && installments > 1) {
+                const installmentValue = amount / installments;
+                let currentDate = new Date(dueDate);
+                // Adjust for timezone offset to ensure date correctness
+                currentDate.setMinutes(currentDate.getMinutes() + currentDate.getTimezoneOffset());
+
+                for (let i = 1; i <= installments; i++) {
+                    const transaction = {
+                        id: Date.now() + i,
+                        type,
+                        description: `${description} (${i}/${installments})`,
+                        amount: installmentValue,
+                        dueDate: currentDate.toISOString().split('T')[0],
+                        category,
+                        status: 'pending',
+                        installment: { current: i, total: installments }
+                    };
+                    state.financials.push(transaction);
+
+                    // Increment month
+                    currentDate.setMonth(currentDate.getMonth() + 1);
+                }
+            } else {
                 const transaction = {
-                    id: Date.now() + i,
+                    id: Date.now(),
                     type,
-                    description: `${description} (${i}/${installments})`,
-                    amount: installmentValue,
-                    dueDate: currentDate.toISOString().split('T')[0],
+                    description,
+                    amount,
+                    dueDate,
                     category,
                     status: 'pending',
-                    installment: { current: i, total: installments }
+                    installment: null
                 };
                 state.financials.push(transaction);
-
-                // Increment month
-                currentDate.setMonth(currentDate.getMonth() + 1);
             }
-        } else {
-            const transaction = {
-                id: Date.now(),
-                type,
-                description,
-                amount,
-                dueDate,
-                category,
-                status: 'pending',
-                installment: null
-            };
-            state.financials.push(transaction);
-        }
 
-        saveData();
-        renderFinancials();
-        closeModal();
+            saveData();
+            renderFinancials();
+            closeModal();
+            form.reset();
+        } catch (error) {
+            console.error('Error saving financial transaction:', error);
+            alert('Erro ao salvar transação financeira: ' + error.message);
+        }
     });
 
     // Tabs
@@ -707,8 +734,15 @@ function setupFinancials() {
     });
 
     // Filters
-    document.getElementById('financialMonthFilter').addEventListener('change', renderFinancials);
-    document.getElementById('financialStatusFilter').addEventListener('change', renderFinancials);
+    const monthFilter = document.getElementById('finFilterMonth');
+    const statusFilter = document.getElementById('finFilterStatus');
+
+    if (monthFilter) {
+        monthFilter.addEventListener('change', renderFinancials);
+    }
+    if (statusFilter) {
+        statusFilter.addEventListener('change', renderFinancials);
+    }
 
     // Populate Month Filter
     populateMonthFilter();
@@ -720,7 +754,9 @@ function setupFinancials() {
 }
 
 function populateMonthFilter() {
-    const select = document.getElementById('financialMonthFilter');
+    const select = document.getElementById('finFilterMonth');
+    if (!select) return;
+
     const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
     select.innerHTML = '<option value="all">Todos os Meses</option>';
@@ -731,11 +767,23 @@ function populateMonthFilter() {
 
 function renderFinancials() {
     const tbody = document.getElementById('financialTableBody');
+    if (!tbody) return;
+
     tbody.innerHTML = '';
 
-    const activeTab = document.querySelector('.tab-btn.active').dataset.tab; // 'payable' or 'receivable'
-    const monthFilter = document.getElementById('financialMonthFilter').value;
-    const statusFilter = document.getElementById('financialStatusFilter').value;
+    const activeTabBtn = document.querySelector('.tab-btn.active');
+    if (!activeTabBtn || !activeTabBtn.dataset || !activeTabBtn.dataset.tab) {
+        console.warn('No active tab found for financials');
+        return;
+    }
+
+    const activeTab = activeTabBtn.dataset.tab; // 'payable' or 'receivable'
+
+    const monthFilterEl = document.getElementById('finFilterMonth');
+    const statusFilterEl = document.getElementById('finFilterStatus');
+
+    const monthFilter = monthFilterEl ? monthFilterEl.value : 'all';
+    const statusFilter = statusFilterEl ? statusFilterEl.value : 'all';
 
     let filtered = state.financials.filter(f => f.type === activeTab);
 
