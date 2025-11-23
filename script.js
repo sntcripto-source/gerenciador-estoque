@@ -5,8 +5,10 @@ const state = {
     views: {
         dashboard: document.getElementById('dashboardView'),
         products: document.getElementById('productsView'),
-        movements: document.getElementById('movementsView')
-    }
+        movements: document.getElementById('movementsView'),
+        financial: document.getElementById('financialView')
+    },
+    financials: []
 };
 
 // Initialization
@@ -20,6 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
     updateDashboard();
     renderProducts();
     renderMovements();
+    setupFinancials();
+    renderFinancials();
 });
 
 // Data Persistence
@@ -29,11 +33,15 @@ function loadData() {
 
     if (savedProducts) state.products = JSON.parse(savedProducts);
     if (savedMovements) state.movements = JSON.parse(savedMovements);
+
+    const savedFinancials = localStorage.getItem('financials');
+    if (savedFinancials) state.financials = JSON.parse(savedFinancials);
 }
 
 function saveData() {
     localStorage.setItem('products', JSON.stringify(state.products));
     localStorage.setItem('movements', JSON.stringify(state.movements));
+    localStorage.setItem('financials', JSON.stringify(state.financials));
     updateDashboard();
 }
 
@@ -127,13 +135,21 @@ function setupModals() {
 // Forms
 function setupForms() {
     // Product Form
+    const productForm = document.getElementById('productForm');
     const purchaseInput = document.getElementById('productPurchasePrice');
     const saleInput = document.getElementById('productSalePrice');
+
+    if (!productForm || !purchaseInput || !saleInput) {
+        console.error('Critical elements missing for product form setup');
+        return;
+    }
 
     function updateMargin() {
         const purchase = parseFloat(purchaseInput.value) || 0;
         const sale = parseFloat(saleInput.value) || 0;
         const display = document.getElementById('profitMarginDisplay');
+
+        if (!display) return;
 
         if (purchase > 0) {
             const margin = ((sale - purchase) / purchase) * 100;
@@ -151,109 +167,163 @@ function setupForms() {
     purchaseInput.addEventListener('input', updateMargin);
     saleInput.addEventListener('input', updateMargin);
 
-    document.getElementById('productForm').addEventListener('submit', (e) => {
+    productForm.addEventListener('submit', (e) => {
         e.preventDefault();
 
-        const formData = {
-            code: document.getElementById('productCode').value,
-            name: document.getElementById('productName').value,
-            category: document.getElementById('productCategory').value,
-            minStock: parseInt(document.getElementById('productMinStock').value),
-            purchasePrice: parseFloat(document.getElementById('productPurchasePrice').value) || 0,
-            salePrice: parseFloat(document.getElementById('productSalePrice').value) || 0,
-            description: document.getElementById('productDescription').value
-        };
-
-        const editId = e.target.dataset.editId;
-
-        if (editId) {
-            // Edit existing
-            const index = state.products.findIndex(p => p.id === parseInt(editId));
-            if (index !== -1) {
-                // Preserve existing stock
-                const currentStock = state.products[index].stock;
-                state.products[index] = {
-                    ...state.products[index],
-                    ...formData,
-                    stock: currentStock
-                };
+        try {
+            // Validate State
+            if (!Array.isArray(state.products)) {
+                console.warn('State products corrupted, resetting');
+                state.products = [];
             }
-        } else {
-            // Add new
-            const initialStock = parseInt(document.getElementById('productInitialStock').value) || 0;
+            if (!Array.isArray(state.movements)) {
+                console.warn('State movements corrupted, resetting');
+                state.movements = [];
+            }
 
-            const newProduct = {
-                id: Date.now(),
-                ...formData,
-                stock: initialStock,
-                createdAt: new Date().toISOString()
+            // Helper to safely get value
+            const getVal = (id) => {
+                const el = document.getElementById(id);
+                if (!el) throw new Error(`Campo não encontrado: ${id}`);
+                return el.value;
             };
-            state.products.push(newProduct);
 
-            // If initial stock > 0, create a movement record
-            if (initialStock > 0) {
-                const movement = {
-                    id: Date.now() + 1, // Ensure unique ID
-                    type: 'entry',
-                    productId: newProduct.id,
-                    productName: newProduct.name,
-                    quantity: initialStock,
-                    notes: 'Estoque Inicial',
-                    date: new Date().toISOString()
+            const formData = {
+                code: getVal('productCode'),
+                name: getVal('productName'),
+                category: getVal('productCategory'),
+                minStock: parseInt(getVal('productMinStock')),
+                purchasePrice: parseFloat(getVal('productPurchasePrice')) || 0,
+                salePrice: parseFloat(getVal('productSalePrice')) || 0,
+                description: getVal('productDescription')
+            };
+
+            const editId = e.target.dataset.editId;
+
+            if (editId) {
+                // Edit existing
+                const index = state.products.findIndex(p => p.id === parseInt(editId));
+                if (index !== -1) {
+                    // Preserve existing stock
+                    const currentStock = state.products[index].stock;
+                    state.products[index] = {
+                        ...state.products[index],
+                        ...formData,
+                        stock: currentStock
+                    };
+                }
+            } else {
+                // Add new
+                const initialStockInput = document.getElementById('productInitialStock');
+                const initialStock = initialStockInput ? (parseInt(initialStockInput.value) || 0) : 0;
+
+                const newProduct = {
+                    id: Date.now(),
+                    ...formData,
+                    stock: initialStock,
+                    createdAt: new Date().toISOString()
                 };
-                state.movements.unshift(movement);
-            }
-        }
+                state.products.push(newProduct);
 
-        saveData();
-        renderProducts();
-        renderMovements(); // Update movements in case we added initial stock
-        document.getElementById('productModal').classList.remove('active');
+                // If initial stock > 0, create a movement record
+                if (initialStock > 0) {
+                    const movement = {
+                        id: Date.now() + 1, // Ensure unique ID
+                        type: 'entry',
+                        productId: newProduct.id,
+                        productName: newProduct.name,
+                        quantity: initialStock,
+                        notes: 'Estoque Inicial',
+                        date: new Date().toISOString()
+                    };
+                    state.movements.unshift(movement);
+                }
+            }
+
+            saveData();
+            renderProducts();
+            renderMovements(); // Update movements in case we added initial stock
+            document.getElementById('productModal').classList.remove('active');
+            productForm.reset(); // Reset form after success
+        } catch (error) {
+            console.error('Error saving product:', error);
+            alert('Erro detalhado: ' + error.message);
+        }
     });
 
     // Movement Form
-    document.getElementById('movementForm').addEventListener('submit', (e) => {
-        e.preventDefault();
+    // Movement Form
+    const movementForm = document.getElementById('movementForm');
+    if (movementForm) {
+        movementForm.addEventListener('submit', (e) => {
+            e.preventDefault();
 
-        const type = document.getElementById('movementType').value;
-        const productId = parseInt(document.getElementById('movementProduct').value);
-        const quantity = parseInt(document.getElementById('movementQuantity').value);
-        const notes = document.getElementById('movementNotes').value;
+            try {
+                // Helper to safely get value
+                const getVal = (id) => {
+                    const el = document.getElementById(id);
+                    if (!el) throw new Error(`Campo não encontrado: ${id}`);
+                    return el.value;
+                };
 
-        const product = state.products.find(p => p.id === productId);
+                const type = getVal('movementType');
+                const productId = parseInt(getVal('movementProduct'));
+                const quantity = parseInt(getVal('movementQuantity'));
+                const notes = getVal('movementNotes');
 
-        if (!product) return;
+                if (isNaN(productId) || isNaN(quantity)) {
+                    throw new Error('Dados inválidos: Produto ou Quantidade');
+                }
 
-        if (type === 'exit' && product.stock < quantity) {
-            alert('Estoque insuficiente!');
-            return;
-        }
+                const product = state.products.find(p => p.id === productId);
 
-        // Update stock
-        if (type === 'entry') {
-            product.stock += quantity;
-        } else {
-            product.stock -= quantity;
-        }
+                if (!product) {
+                    throw new Error('Produto não encontrado');
+                }
 
-        // Record movement
-        const movement = {
-            id: Date.now(),
-            type,
-            productId,
-            productName: product.name,
-            quantity,
-            notes,
-            date: new Date().toISOString()
-        };
+                if (type === 'exit' && product.stock < quantity) {
+                    alert('Estoque insuficiente!');
+                    return;
+                }
 
-        state.movements.unshift(movement); // Add to beginning
+                // Update stock
+                if (type === 'entry') {
+                    product.stock += quantity;
+                } else {
+                    product.stock -= quantity;
+                }
 
-        saveData();
-        renderProducts();
-        renderMovements();
-        document.getElementById('movementModal').classList.remove('active');
-    });
+                // Record movement
+                const movement = {
+                    id: Date.now(),
+                    type,
+                    productId,
+                    productName: product.name,
+                    quantity,
+                    notes,
+                    date: new Date().toISOString()
+                };
+
+                if (!Array.isArray(state.movements)) {
+                    state.movements = [];
+                }
+                state.movements.unshift(movement); // Add to beginning
+
+                saveData();
+                renderProducts();
+                renderMovements();
+
+                const modal = document.getElementById('movementModal');
+                if (modal) modal.classList.remove('active');
+                movementForm.reset();
+            } catch (error) {
+                console.error('Error saving movement:', error);
+                alert('Erro ao salvar movimentação: ' + error.message);
+            }
+        });
+    } else {
+        console.error('Movement form not found');
+    }
 
     // Search
     document.getElementById('searchProducts').addEventListener('input', (e) => {
@@ -375,8 +445,8 @@ function updateDashboard() {
         .filter(m => m.type === 'exit' && new Date(m.date).getMonth() === currentMonth)
         .reduce((acc, m) => acc + m.quantity, 0);
 
-    document.getElementById('monthlyEntries').textContent = monthlyEntries;
-    document.getElementById('monthlyExits').textContent = monthlyExits;
+    document.getElementById('monthEntries').textContent = monthlyEntries;
+    document.getElementById('monthExits').textContent = monthlyExits;
 
     // Low Stock List
     const lowStockList = document.getElementById('lowStockList');
@@ -457,10 +527,17 @@ window.editProduct = function (id) {
 };
 
 window.deleteProduct = function (id) {
-    if (confirm('Tem certeza que deseja excluir este produto?')) {
+    if (confirm('Tem certeza que deseja excluir este produto? Todas as movimentações associadas também serão excluídas.')) {
+        // Remove product
         state.products = state.products.filter(p => p.id !== id);
+
+        // Remove associated movements
+        state.movements = state.movements.filter(m => m.productId !== id);
+
         saveData();
         renderProducts();
+        renderMovements();
+        updateDashboard();
     }
 };
 
@@ -470,6 +547,7 @@ function setupExportImport() {
         const data = {
             products: state.products,
             movements: state.movements,
+            financials: state.financials,
             exportDate: new Date().toISOString()
         };
 
@@ -499,9 +577,11 @@ function setupExportImport() {
                     if (confirm('Isso irá substituir todos os dados atuais. Deseja continuar?')) {
                         state.products = data.products;
                         state.movements = data.movements;
+                        state.financials = data.financials || [];
                         saveData();
                         renderProducts();
                         renderMovements();
+                        renderFinancials();
                         alert('Dados importados com sucesso!');
                     }
                 } else {
@@ -514,4 +594,244 @@ function setupExportImport() {
         reader.readAsText(file);
         e.target.value = '';
     });
+
+    // Clear Data
+    document.getElementById('clearDataBtn').addEventListener('click', () => {
+        if (confirm('ATENÇÃO: Isso irá apagar TODOS os dados (produtos, movimentações e financeiro). Esta ação não pode ser desfeita. Tem certeza?')) {
+            if (confirm('Tem certeza absoluta? Todos os dados serão perdidos.')) {
+                state.products = [];
+                state.movements = [];
+                state.financials = [];
+                saveData();
+                renderProducts();
+                renderMovements();
+                renderFinancials();
+                updateDashboard();
+                alert('Todos os dados foram apagados.');
+            }
+        }
+    });
 }
+
+// Financial Module
+function setupFinancials() {
+    // Modal
+    const modal = document.getElementById('financialModal');
+    const addBtn = document.getElementById('addFinancialBtn');
+    const closeBtn = document.getElementById('closeFinancialModal');
+    const cancelBtn = document.getElementById('cancelFinancialBtn');
+    const form = document.getElementById('financialForm');
+    const installmentCheck = document.getElementById('finIsInstallment');
+    const installmentGroup = document.getElementById('installmentGroup');
+
+    function openModal() {
+        form.reset();
+        installmentGroup.style.display = 'none';
+        document.getElementById('financialModalTitle').textContent = 'Nova Conta';
+        modal.classList.add('active');
+    }
+
+    function closeModal() {
+        modal.classList.remove('active');
+    }
+
+    addBtn.addEventListener('click', openModal);
+    closeBtn.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+
+    // Installment Toggle
+    installmentCheck.addEventListener('change', (e) => {
+        installmentGroup.style.display = e.target.checked ? 'block' : 'none';
+    });
+
+    // Form Submit
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+
+        const type = document.querySelector('input[name="type"]:checked').value;
+        const description = document.getElementById('finDescription').value;
+        const amount = parseFloat(document.getElementById('finAmount').value);
+        const dueDate = document.getElementById('finDueDate').value;
+        const category = document.getElementById('finCategory').value;
+        const isInstallment = installmentCheck.checked;
+        const installments = isInstallment ? parseInt(document.getElementById('finInstallments').value) : 1;
+
+        if (isInstallment && installments > 1) {
+            const installmentValue = amount / installments;
+            let currentDate = new Date(dueDate);
+            // Adjust for timezone offset to ensure date correctness
+            currentDate.setMinutes(currentDate.getMinutes() + currentDate.getTimezoneOffset());
+
+            for (let i = 1; i <= installments; i++) {
+                const transaction = {
+                    id: Date.now() + i,
+                    type,
+                    description: `${description} (${i}/${installments})`,
+                    amount: installmentValue,
+                    dueDate: currentDate.toISOString().split('T')[0],
+                    category,
+                    status: 'pending',
+                    installment: { current: i, total: installments }
+                };
+                state.financials.push(transaction);
+
+                // Increment month
+                currentDate.setMonth(currentDate.getMonth() + 1);
+            }
+        } else {
+            const transaction = {
+                id: Date.now(),
+                type,
+                description,
+                amount,
+                dueDate,
+                category,
+                status: 'pending',
+                installment: null
+            };
+            state.financials.push(transaction);
+        }
+
+        saveData();
+        renderFinancials();
+        closeModal();
+    });
+
+    // Tabs
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+            renderFinancials();
+        });
+    });
+
+    // Filters
+    document.getElementById('financialMonthFilter').addEventListener('change', renderFinancials);
+    document.getElementById('financialStatusFilter').addEventListener('change', renderFinancials);
+
+    // Populate Month Filter
+    populateMonthFilter();
+
+    // Close on outside click
+    window.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+}
+
+function populateMonthFilter() {
+    const select = document.getElementById('financialMonthFilter');
+    const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+    select.innerHTML = '<option value="all">Todos os Meses</option>';
+    months.forEach((m, index) => {
+        select.innerHTML += `<option value="${index}">${m}</option>`;
+    });
+}
+
+function renderFinancials() {
+    const tbody = document.getElementById('financialTableBody');
+    tbody.innerHTML = '';
+
+    const activeTab = document.querySelector('.tab-btn.active').dataset.tab; // 'payable' or 'receivable'
+    const monthFilter = document.getElementById('financialMonthFilter').value;
+    const statusFilter = document.getElementById('financialStatusFilter').value;
+
+    let filtered = state.financials.filter(f => f.type === activeTab);
+
+    if (monthFilter !== 'all') {
+        filtered = filtered.filter(f => {
+            // Create date object and adjust for timezone to get correct month
+            const date = new Date(f.dueDate);
+            date.setMinutes(date.getMinutes() + date.getTimezoneOffset());
+            return date.getMonth() === parseInt(monthFilter);
+        });
+    }
+
+    if (statusFilter !== 'all') {
+        filtered = filtered.filter(f => f.status === statusFilter);
+    }
+
+    // Sort by date
+    filtered.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+
+    filtered.forEach(f => {
+        const tr = document.createElement('tr');
+        // Adjust date for display
+        const dateObj = new Date(f.dueDate);
+        dateObj.setMinutes(dateObj.getMinutes() + dateObj.getTimezoneOffset());
+        const date = dateObj.toLocaleDateString('pt-BR');
+
+        const amount = f.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+        let statusClass = 'status-pending';
+        let statusLabel = 'Pendente';
+
+        if (f.status === 'paid') {
+            statusClass = 'status-paid';
+            statusLabel = f.type === 'payable' ? 'Pago' : 'Recebido';
+        } else {
+            // Check if late
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (dateObj < today && f.status === 'pending') {
+                statusClass = 'status-late';
+                statusLabel = 'Atrasado';
+            }
+        }
+
+        tr.innerHTML = `
+            <td>${date}</td>
+            <td>${f.description}</td>
+            <td>${f.category || '-'}</td>
+            <td>${f.installment ? `${f.installment.current}/${f.installment.total}` : '-'}</td>
+            <td style="font-weight: bold;">${amount}</td>
+            <td><span class="${statusClass}">${statusLabel}</span></td>
+            <td>
+                <button class="action-btn" onclick="toggleFinancialStatus(${f.id})" title="${f.status === 'pending' ? 'Marcar como Pago' : 'Reabrir'}">
+                    <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                    </svg>
+                </button>
+                <button class="action-btn delete" onclick="deleteFinancial(${f.id})" title="Excluir">
+                    <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                    </svg>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    updateFinancialSummary();
+}
+
+function updateFinancialSummary() {
+    const totalReceivable = state.financials
+        .filter(f => f.type === 'receivable' && f.status === 'pending')
+        .reduce((acc, f) => acc + f.amount, 0);
+
+    const totalPayable = state.financials
+        .filter(f => f.type === 'payable' && f.status === 'pending')
+        .reduce((acc, f) => acc + f.amount, 0);
+
+    document.getElementById('totalReceivable').textContent = totalReceivable.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    document.getElementById('totalPayable').textContent = totalPayable.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+window.toggleFinancialStatus = function (id) {
+    const index = state.financials.findIndex(f => f.id === id);
+    if (index !== -1) {
+        state.financials[index].status = state.financials[index].status === 'pending' ? 'paid' : 'pending';
+        saveData();
+        renderFinancials();
+    }
+};
+
+window.deleteFinancial = function (id) {
+    if (confirm('Tem certeza que deseja excluir este registro?')) {
+        state.financials = state.financials.filter(f => f.id !== id);
+        saveData();
+        renderFinancials();
+    }
+};

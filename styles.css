@@ -551,3 +551,102 @@ body {
     font-weight: bold;
     color: #718096;
 }
+
+/* Financial Module */
+.financial-tabs {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1rem;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    color: var(--text-light);
+    cursor: pointer;
+    border-radius: 0.5rem;
+    transition: all 0.2s;
+}
+
+.tab-btn:hover {
+    color: var(--primary);
+    background-color: var(--bg-body);
+}
+
+.tab-btn.active {
+    color: var(--primary);
+    background-color: #ebf4ff;
+}
+
+.radio-group {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 0.5rem;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-weight: 500;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.status-paid {
+    color: var(--success);
+    background-color: #c6f6d5;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.status-pending {
+    color: var(--warning);
+    background-color: #feebc8;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.status-late {
+    color: var(--danger);
+    background-color: #fed7d7;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* File Input */
+#importFileInput {
+    display: none;
+}
+
+#installmentGroup {
+    display: none;
+}
+
+.btn-icon-danger {
+    color: #e53e3e;
+}
+
+.btn-icon-danger:hover {
+    color: #c53030;
+    background-color: #fff5f5;
+}
