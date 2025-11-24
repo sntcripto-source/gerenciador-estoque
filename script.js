@@ -432,8 +432,9 @@ function renderMovements() {
 }
 
 function updateDashboard() {
-    // Stats
-    document.getElementById('totalProducts').textContent = state.products.length;
+    // Stats - Count unique products by code
+    const uniqueProductCodes = new Set(state.products.map(p => p.code));
+    document.getElementById('totalProducts').textContent = uniqueProductCodes.size;
     document.getElementById('totalStock').textContent = state.products.reduce((acc, p) => acc + p.stock, 0);
 
     const currentMonth = new Date().getMonth();
