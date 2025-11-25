@@ -435,7 +435,27 @@ function updateDashboard() {
     // Stats - Count unique products by code
     const uniqueProductCodes = new Set(state.products.map(p => p.code));
     document.getElementById('totalProducts').textContent = uniqueProductCodes.size;
-    document.getElementById('totalStock').textContent = state.products.reduce((acc, p) => acc + p.stock, 0);
+
+    // Group products by code and sum their stock
+    const stockByCode = {};
+    state.products.forEach(p => {
+        if (!stockByCode[p.code]) {
+            stockByCode[p.code] = 0;
+        }
+        stockByCode[p.code] += p.stock;
+    });
+
+    // Display stock grouped by code
+    const totalStockEl = document.getElementById('totalStock');
+    if (Object.keys(stockByCode).length === 0) {
+        totalStockEl.innerHTML = '0';
+    } else {
+        // Create a list showing stock sum for each unique product code
+        const stockList = Object.entries(stockByCode)
+            .map(([code, stock]) => `<div style="font-size: 0.85em; line-height: 1.5; margin-bottom: 2px;">${code}: <strong>${stock}</strong></div>`)
+            .join('');
+        totalStockEl.innerHTML = stockList;
+    }
 
     const currentMonth = new Date().getMonth();
     const monthlyEntries = state.movements
