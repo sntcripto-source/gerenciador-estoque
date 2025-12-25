@@ -565,20 +565,26 @@ window.deleteProduct = function (id) {
 // Export/Import
 function setupExportImport() {
     document.getElementById('exportBtn').addEventListener('click', () => {
-        const data = {
-            products: state.products,
-            movements: state.movements,
-            financials: state.financials,
-            exportDate: new Date().toISOString()
-        };
+        const option = confirm('Deseja exportar para Excel? (Cancele para exportar em JSON)') ? 'excel' : 'json';
 
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `backup-estoque-${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        if (option === 'json') {
+            const data = {
+                products: state.products,
+                movements: state.movements,
+                financials: state.financials,
+                exportDate: new Date().toISOString()
+            };
+
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `backup-estoque-${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } else {
+            exportToExcel();
+        }
     });
 
     const fileInput = document.getElementById('importFileInput');
@@ -591,28 +597,38 @@ function setupExportImport() {
         if (!file) return;
 
         const reader = new FileReader();
-        reader.onload = (event) => {
-            try {
-                const data = JSON.parse(event.target.result);
-                if (data.products && data.movements) {
-                    if (confirm('Isso irá substituir todos os dados atuais. Deseja continuar?')) {
-                        state.products = data.products;
-                        state.movements = data.movements;
-                        state.financials = data.financials || [];
-                        saveData();
-                        renderProducts();
-                        renderMovements();
-                        renderFinancials();
-                        alert('Dados importados com sucesso!');
-                    }
-                } else {
-                    alert('Arquivo inválido!');
+
+        if (file.name.endsWith('.json')) {
+            reader.onload = (event) => {
+                try {
+                    const data = JSON.parse(event.target.result);
+                    processImportedData(data);
+                } catch (err) {
+                    alert('Erro ao ler arquivo JSON!');
                 }
-            } catch (err) {
-                alert('Erro ao ler arquivo!');
-            }
-        };
-        reader.readAsText(file);
+            };
+            reader.readAsText(file);
+        } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
+            reader.onload = (event) => {
+                try {
+                    const data = event.target.result;
+                    const workbook = XLSX.read(data, { type: 'binary' });
+
+                    const importedData = {
+                        products: XLSX.utils.sheet_to_json(workbook.Sheets['Produtos'] || workbook.Sheets[workbook.SheetNames[0]]),
+                        movements: XLSX.utils.sheet_to_json(workbook.Sheets['Movimentações'] || workbook.Sheets[workbook.SheetNames[1]]),
+                        financials: XLSX.utils.sheet_to_json(workbook.Sheets['Financeiro'] || workbook.Sheets[workbook.SheetNames[2]])
+                    };
+
+                    processImportedData(importedData);
+                } catch (err) {
+                    console.error(err);
+                    alert('Erro ao ler arquivo Excel!');
+                }
+            };
+            reader.readAsBinaryString(file);
+        }
+
         e.target.value = '';
     });
 
@@ -632,6 +648,49 @@ function setupExportImport() {
             }
         }
     });
+}
+
+function processImportedData(data) {
+    if (data.products && data.movements) {
+        if (confirm('Isso irá substituir todos os dados atuais. Deseja continuar?')) {
+            // Basic validation/sanitization could be added here
+            state.products = data.products;
+            state.movements = data.movements;
+            state.financials = data.financials || [];
+
+            saveData();
+            renderProducts();
+            renderMovements();
+            renderFinancials();
+            alert('Dados importados com sucesso!');
+        }
+    } else {
+        alert('Arquivo inválido ou incompleto!');
+    }
+}
+
+function exportToExcel() {
+    try {
+        const wb = XLSX.utils.book_new();
+
+        // Products Sheet
+        const wsProducts = XLSX.utils.json_to_sheet(state.products);
+        XLSX.utils.book_append_sheet(wb, wsProducts, "Produtos");
+
+        // Movements Sheet
+        const wsMovements = XLSX.utils.json_to_sheet(state.movements);
+        XLSX.utils.book_append_sheet(wb, wsMovements, "Movimentações");
+
+        // Financials Sheet
+        const wsFinancials = XLSX.utils.json_to_sheet(state.financials);
+        XLSX.utils.book_append_sheet(wb, wsFinancials, "Financeiro");
+
+        // Export
+        XLSX.writeFile(wb, `estoque-${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (error) {
+        console.error('Erro ao exportar:', error);
+        alert('Erro ao gerar arquivo Excel.');
+    }
 }
 
 // Financial Module
